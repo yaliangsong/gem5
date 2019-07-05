@@ -71,7 +71,13 @@ ExeTracerRecord::dumpTicks(ostream &outs)
 void
 Trace::ExeTracerRecord::traceInst(const StaticInstPtr &inst, bool ran)
 {
+    BaseCPU *cpu = thread->getCpuPtr();
     ostream &outs = Trace::output();
+    OpClass opcls = inst->opClass();
+
+    if (opcls == MemReadOp || opcls == MemWriteOp) {
+        cpu->markAccessed(opcls, addr, size, data.as_int);
+    }
 
     if (!Debug::ExecUser || !Debug::ExecKernel) {
         bool in_user_mode = TheISA::inUserMode(thread);
@@ -122,7 +128,7 @@ Trace::ExeTracerRecord::traceInst(const StaticInstPtr &inst, bool ran)
         outs << " : ";
 
         if (Debug::ExecOpClass) {
-            outs << Enums::OpClassStrings[inst->opClass()] << " : ";
+            outs << Enums::OpClassStrings[opcls] << " : ";
         }
 
         if (Debug::ExecResult && !predicate) {

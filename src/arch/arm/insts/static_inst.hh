@@ -556,6 +556,46 @@ class ArmStaticInst : public StaticInst
         return getCurSveVecLenInBits(tc) / (8 * sizeof(T));
     }
 };
+
+class ArmStaticInstEncoder : public ArmStaticInst
+{
+  public:
+    ArmStaticInstEncoder(ExtMachInst emi)
+        : ArmStaticInst("asm", emi, No_OpClass)
+    {}
+
+    Fault
+    execute(ExecContext *xc, Trace::InstRecord *traceData) const override
+    {
+        return NoFault;
+    }
+
+    void
+    advancePC(TheISA::PCState &pcState) const override
+    {
+        pcState.advance();
+    }
+
+    std::string
+    generateDisassembly(Addr pc, const SymbolTable *symtab) const override
+    {
+        return mnemonic;
+    }
+
+    void
+    encodeIntReg(std::ostream &os, RegIndex idx, uint8_t opWidth = 64)
+    {
+        printIntReg(os, idx, opWidth);
+    }
+
+    void
+    encodeMiscReg(std::ostream &os, RegIndex idx)
+    {
+        printMiscReg(os, idx);
+    }
+
+  private:
+};
 }
 
 #endif //__ARCH_ARM_INSTS_STATICINST_HH__

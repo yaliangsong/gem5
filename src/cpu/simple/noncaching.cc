@@ -72,3 +72,135 @@ NonCachingSimpleCPUParams::create()
         fatal("only one workload allowed");
     return new NonCachingSimpleCPU(this);
 }
+
+void
+NonCachingSimpleCPU::dumpSimulatedSymbols()
+{
+    if (!debugSymbolTable || !simpoint_asm.is_open())
+        return;
+
+    if (curThread != 0)
+        fatal("Execution disassembly currently does not support SMT");
+
+    SimpleExecContext &t_info = *threadInfo[curThread];
+    SimpleThread* thread = t_info.thread;
+    TheISA::Decoder *decoder = &(thread->decoder);
+    SymbolTable *symtab = debugSymbolTable;
+
+    int size = symbols.size();
+    int i = 0;
+    std::string sym_str;
+    std::string lab_str;
+    Addr funcStart, funcEnd, addr, target;
+    StaticInstPtr instPtr;
+    std::string disassembly;
+    TheISA::PCState pc;
+    bool doDump;
+
+    while (i < size) {
+        if (!symtab->findNearestSymbol(symbols[i], sym_str,
+                                       funcStart, funcEnd))
+            return;
+        if (funcStart != symbols[i])
+            return;
+        simpoint_asm << std::endl << sym_str << ":" << std::endl;
+        doDump = false;
+
+dumpAgain:
+        addr = funcStart;
+        pc = thread->pcState();
+        pc.set(addr);
+        thread->pcState(pc);
+        t_info.fetchOffset = 0;
+
+        while (addr < funcEnd) {
+            if (doDump && simpoint_entry == addr)
+                simpoint_asm << "simpoint_start:" << std::endl;
+            if (doDump && symtab->findTarget(addr, lab_str))
+                simpoint_asm << lab_str << ":" << std::endl;
+
+            Fault fault = NoFault;
+            ifetch_req->taskId(taskId());
+            setupFetchRequest(ifetch_req);
+            fault = thread->itb->translateAtomic(ifetch_req,
+                                                 thread->getTC(),
+                                                 BaseTLB::Execute);
+            if (fault == NoFault) {
+                Packet ifetch_pkt = Packet(ifetch_req, MemCmd::ReadReq);
+                ifetch_pkt.dataStatic(&inst);
+                sendPacket(icachePort, &ifetch_pkt);
+                gtoh(inst);
+
+                Addr fetchPC = (addr & PCMask) + t_info.fetchOffset;
+                decoder->moreBytes(pc, fetchPC, inst);
+                instPtr = decoder->decode(pc);
+                if (instPtr) {
+                    t_info.stayAtPC = false;
+                    thread->pcState(pc);
+                } else {
+                    fatal("Fetching MicroOP?");
+                    t_info.stayAtPC = true;
+                    t_info.fetchOffset += sizeof(MachInst);
+                }
+
+                if (doDump) {
+                    disassembly = instPtr->disassemble(addr, symtab, true);
+                    simpoint_asm << disassembly << std::endl;
+                } else {
+                    if (instPtr->markTarget(addr, target, symtab) &&
+                        symtab->findNearestSymbol(target, sym_str, addr) &&
+                        addr == target) {
+                        markBranched(target);
+                    }
+                }
+            }
+            if (fault != NoFault || !t_info.stayAtPC)
+                advancePC(fault);
+            pc = thread->pcState();
+            addr = pc.instAddr();
+        }
+        if (!doDump) {
+            doDump = true;
+            goto dumpAgain;
+        }
+        i++;
+    }
+
+    size = branches.size();
+    i = 0;
+    while (i < size) {
+        if (!symtab->findNearestSymbol(branches[i], sym_str,
+                                       funcStart, funcEnd))
+            return;
+        if (funcStart != branches[i])
+            return;
+        if (i == 0)
+            simpoint_asm << std::endl;
+        simpoint_asm << sym_str << ":" << std::endl;
+        i++;
+    }
+    thread->getIsaPtr()->dumpCallReturn(this);
+}
+
+static bool
+readMem(BaseCPU *cpu, Addr addr, uint8_t *data,
+        unsigned size, Request::Flags flags)
+{
+    Fault fault = NoFault;
+    NonCachingSimpleCPU *this_cpu = dynamic_cast<NonCachingSimpleCPU *>(cpu);
+
+    if (!this_cpu)
+        return false;
+    fault = this_cpu->readMem(addr, data, size, flags);
+    return fault == NoFault ? true : false;
+}
+
+void
+NonCachingSimpleCPU::dumpSimulatedRegisters()
+{
+    SimpleExecContext &t_info = *threadInfo[curThread];
+    SimpleThread* thread = t_info.thread;
+
+    std::cout << "Dumping registers..." << std::endl;
+    thread->getIsaPtr()->dumpContextRegs(this, thread, ::readMem);
+}

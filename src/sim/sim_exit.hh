@@ -56,5 +56,6 @@ void exitSimLoop(const std::string &message, int exit_code = 0,
 /// any normal events which are schedule at the current time.
 void exitSimLoopNow(const std::string &message, int exit_code = 0,
                     Tick repeat = 0, bool serialize = false);
+void sliceSimPoint();
 
 #endif // __SIM_EXIT_HH__

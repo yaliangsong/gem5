@@ -296,6 +296,8 @@ def addCommonOptions(parser):
     parser.add_option("--restore-simpoint-checkpoint", action="store_true",
         help="restore from a simpoint checkpoint taken with " +
              "--take-simpoint-checkpoints")
+    parser.add_option("--enable-simpoint-slicing", action="store_true",
+                     help="Enable saving simpoint checkpoint assembly");
 
     # Checkpointing options
     ###Note that performing checkpointing via python script files will override

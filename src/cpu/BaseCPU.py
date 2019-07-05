@@ -212,6 +212,8 @@ class BaseCPU(ClockedObject):
         "terminate when any thread reaches this inst count")
     simpoint_start_insts = VectorParam.Counter([],
         "starting instruction counts of simpoints")
+    simpoint_disassembly_path = Param.String("",
+        "Path to save simpoint disassembly")
     max_loads_all_threads = Param.Counter(0,
         "terminate when all threads have reached this load count")
     max_loads_any_thread = Param.Counter(0,

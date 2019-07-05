@@ -553,9 +553,13 @@ BaseSimpleCPU::preExecute()
     //If we decoded an instruction this "tick", record information about it.
     if (curStaticInst) {
 #if TRACING_ON
-        traceData = tracer->getInstRecord(curTick(), thread->getTC(),
-                curStaticInst, thread->pcState(), curMacroStaticInst);
+        PCState pcState = thread->pcState();
 
+        // Mark the PC related symbol as executed.
+        markStarted(pcState.instAddr());
+
+        traceData = tracer->getInstRecord(curTick(), thread->getTC(),
+                curStaticInst, pcState, curMacroStaticInst);
         DPRINTF(Decode,"Decode: Decoded %s instruction: %#x\n",
                 curStaticInst->getName(), curStaticInst->machInst);
 #endif // TRACING_ON

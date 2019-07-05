@@ -208,6 +208,8 @@ class Decoder
     {
         sveLen = len;
     }
+
+    ExtMachInst getInst() const { return emi; };
 };
 
 } // namespace ArmISA

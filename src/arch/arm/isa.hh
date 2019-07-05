@@ -706,7 +706,29 @@ namespace ArmISA
 
         void startup(ThreadContext *tc);
 
-        Enums::DecoderFlavour decoderFlavour() const { return _decoderFlavour; }
+        // Dump register context
+        uint64_t readMem(BaseCPU *cpu, ThreadContext *tc, Addr addr,
+            bool (*__readMem)(BaseCPU *cpu, Addr, uint8_t *, unsigned,
+                              Request::Flags flags));
+        void dumpLR(BaseCPU *cpu, ThreadContext *tc, Addr lr);
+        void dumpFP(BaseCPU *cpu, ThreadContext *tc, int offset);
+        void dumpStackedFP(BaseCPU *cpu, ThreadContext *tc, int sp);
+        void dumpStackedLR(BaseCPU *cpu, ThreadContext *tc, Addr lr);
+        void dumpStacked(BaseCPU *cpu, ThreadContext *tc, uint64_t data);
+        void dumpIntReg(BaseCPU *cpu, ThreadContext *tc,
+                        RegIndex idx, RegVal val);
+        void dumpIntReg(BaseCPU *cpu, ThreadContext *tc, RegIndex idx);
+        void dumpMiscReg(BaseCPU *cpu, ThreadContext *tc, RegIndex idx);
+        void dumpContextRegs(BaseCPU *cpu, ThreadContext *tc,
+            bool (*__readMem)(BaseCPU *cpu, Addr, uint8_t *, unsigned,
+                              Request::Flags));
+        // Dump call return instruction
+        void dumpCallReturn(BaseCPU *cpu);
+
+        Enums::DecoderFlavour decoderFlavour() const
+        {
+            return _decoderFlavour;
+        }
 
         /** Getter for haveGICv3CPUInterface */
         bool haveGICv3CpuIfc() const

@@ -178,6 +178,9 @@ def simulate(*args, **kwargs):
 
     return _m5.event.simulate(*args, **kwargs)
 
+def sliceSimPoint(*args, **kwargs):
+    return _m5.event.sliceSimPoint(*args, **kwargs)
+
 def drain():
     """Drain the simulator in preparation of a checkpoint or memory mode
     switch.

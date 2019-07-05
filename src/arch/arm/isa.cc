@@ -38,6 +38,7 @@
  *          Ali Saidi
  */
 
+#include "arch/arm/insts/static_inst.hh"
 #include "arch/arm/isa.hh"
 #include "arch/arm/pmu.hh"
 #include "arch/arm/system.hh"
@@ -2132,6 +2133,220 @@ ISA::zeroSveVecRegUpperPart(VecRegContainer &vc, unsigned eCount)
     for (int i = 2; i < eCount; ++i) {
         vv[i] = 0;
     }
+}
+
+void
+ISA::dumpIntReg(BaseCPU *cpu, ThreadContext *tc, RegIndex idx, RegVal val)
+{
+    ExtMachInst emi = 0;
+    emi.aarch64 = true;
+    ArmStaticInstEncoder encoder(emi);
+
+    cpu->simpoint_asm << "  mov   ";
+    encoder.encodeIntReg(cpu->simpoint_asm, idx);
+    cpu->simpoint_asm << ", #0x";
+    cpu->simpoint_asm << std::hex << val << std::endl;
+}
+
+void
+ISA::dumpIntReg(BaseCPU *cpu, ThreadContext *tc, RegIndex idx)
+{
+    dumpIntReg(cpu, tc, idx, tc->readIntReg(idx));
+}
+
+void
+ISA::dumpMiscReg(BaseCPU *cpu, ThreadContext *tc, RegIndex idx)
+{
+    ExtMachInst emi = 0;
+    emi.aarch64 = true;
+    ArmStaticInstEncoder encoder(emi);
+
+    cpu->simpoint_asm << "  mov   x29, #0x";
+    cpu->simpoint_asm << std::hex << readMiscReg(idx, tc) << std::endl;
+    cpu->simpoint_asm << "  msr   ";
+    encoder.encodeMiscReg(cpu->simpoint_asm, idx);
+    cpu->simpoint_asm << ", x29" << std::endl;
+}
+
+uint64_t
+ISA::readMem(BaseCPU *cpu, ThreadContext *tc, Addr addr,
+    bool (*__readMem)(BaseCPU *cpu, Addr, uint8_t *, unsigned,
+                      Request::Flags flags))
+{
+    uint64_t val;
+    Request::Flags flags = ArmISA::TLB::AllowUnaligned |
+                           ArmISA::TLB::MustBeOne;
+
+    __readMem(cpu, addr, (uint8_t *)(&val), sizeof(uint64_t), flags);
+    return val;
+}
+
+void
+ISA::dumpFP(BaseCPU *cpu, ThreadContext *tc, int offset)
+{
+    cpu->simpoint_asm << "  add   x29, sp, #" << offset << std::endl;
+}
+
+void
+ISA::dumpLR(BaseCPU *cpu, ThreadContext *tc, Addr lr)
+{
+    std::string sym_str;
+    Addr addr;
+    SymbolTable *symtab = debugSymbolTable;
+
+    if (symtab) {
+        symtab->insert_target(lr);
+        if (symtab->findNearestSymbol(lr, sym_str, addr))
+            cpu->markExecuted(addr);
+        if (symtab->findLabel(lr, sym_str))
+            cpu->simpoint_asm << "  adr   x30, " << sym_str << std::endl;
+        else
+            cpu->simpoint_asm << "  mov   x30, " << lr << std::endl;
+    }
+}
+
+void
+ISA::dumpStackedFP(BaseCPU *cpu, ThreadContext *tc, int offset)
+{
+    cpu->simpoint_asm << "  add   x29, sp, #" << offset << std::endl;
+    cpu->simpoint_asm << "  str   x29, [sp, #8]" << std::endl;
+}
+
+void
+ISA::dumpStackedLR(BaseCPU *cpu, ThreadContext *tc, Addr lr)
+{
+    std::string sym_str;
+    Addr addr;
+    SymbolTable *symtab = debugSymbolTable;
+
+    if (symtab) {
+        symtab->insert_target(lr);
+        if (symtab->findNearestSymbol(lr, sym_str, addr))
+            cpu->markExecuted(addr);
+        if (symtab->findLabel(lr, sym_str))
+            cpu->simpoint_asm << "  adr   x29, " << sym_str << std::endl;
+        else
+            cpu->simpoint_asm << "  mov   x29, " << lr << std::endl;
+        cpu->simpoint_asm << "  str   x29, [sp, #8]" << std::endl;
+    }
+}
+
+void
+ISA::dumpStacked(BaseCPU *cpu, ThreadContext *tc, uint64_t data)
+{
+    cpu->simpoint_asm << "  mov   x29, #0x" << std::hex << data << std::endl;
+    cpu->simpoint_asm << "  str   x29, [sp, #8]" << std::endl;
+}
+
+void
+ISA::dumpContextRegs(BaseCPU *cpu, ThreadContext *tc,
+    bool (*__readMem)(BaseCPU *cpu, Addr, uint8_t *, unsigned,
+                      Request::Flags flags))
+{
+    uint64_t sp, fp, lr, spBottom, spTop, fpLast, lrLast, ptr;
+    uint64_t fpVal, lrVal, val;
+    int i, stack_depth;
+    std::stack<uint64_t> ss;
+    std::stack<int> fp_idx_queue;
+    std::stack<int> lr_idx_queue;
+
+    if (cpu->simpoint_asm.is_open()) {
+        cpu->simpoint_asm << "simpoint_entry:" << std::endl;
+        // Save special registers, PC is not saved as the dumped symbols
+        // will be linked into the new binary that is executed using the
+        // new link addresses.
+        fpLast = fp = tc->readIntReg(INTREG_X29);
+        lrLast = lr = tc->readIntReg(INTREG_X30);
+        // Only user programs are simulated.
+        spBottom = sp = tc->readIntReg(INTREG_SP0);
+        for (i = 0; i < 29; i++)
+            dumpIntReg(cpu, tc, INTREG_X0 + i);
+        dumpMiscReg(cpu, tc, MISCREG_CPSR);
+        // Dump stack:
+        //      +----------------+
+        //      | LR             |
+        //      +----------------+
+        //      | FP             |
+        // -FP->+----------------+
+        //      | Dynamic Alloc  |
+        //      +----------------+
+        //      | Stack Arg Area |
+        // -SP->+----------------+
+        //      | ...            |
+        //      +----------------+
+        //      | Callee Saved   |
+        //      +----------------+
+        //      | Local Vars     |
+        //      +----------------+
+        //      | LR             |
+        //      +----------------+
+        //      | FP             |
+        // -FP->+----------------+
+        //      | Dynamic Alloc  |
+        //      +----------------+
+        //      | Stack Arg Area |
+        // -SP->+----------------+
+        i = 0;
+        while (fp != 0) {
+            ptr = sp;
+            while (ptr < fp) {
+                val = readMem(cpu, tc, (Addr)ptr, __readMem);
+                ss.push(val);
+                std::cout << "Stack:0x" << std::hex << ptr;
+                std::cout << ":0x" << std::hex << val << std::endl;
+                ptr += 8;
+                i += 8;
+            }
+            fp_idx_queue.push(i);
+            fpVal = readMem(cpu, tc, (Addr)fp, __readMem);
+            ss.push(fpVal);
+            i += 8;
+            std::cout << "FP:0x" << std::hex << fp;
+            std::cout << ":0x" << std::hex << fpVal << std::endl;
+            lr_idx_queue.push(i);
+            lrVal = readMem(cpu, tc, (Addr)(fp + 8), __readMem);
+            ss.push(lrVal);
+            i += 8;
+            std::cout << "LR:0x" << std::hex << fp + 8;
+            std::cout << ":0x" << std::hex << lrVal << std::endl;
+            sp = fp + 16;
+            fp = fpVal;
+            lr = lrVal;
+        }
+        stack_depth = i;
+        spTop = spBottom + stack_depth;
+
+        // Dump stack context
+        i = 0;
+        while (!ss.empty()) {
+            if (fp_idx_queue.top() == stack_depth - i - 8) {
+                dumpStackedFP(cpu, tc, i + 8 + ss.top() - spTop);
+                fp_idx_queue.pop();
+            } else if (lr_idx_queue.top() == stack_depth - i - 8) {
+                dumpStackedLR(cpu, tc, ss.top());
+                lr_idx_queue.pop();
+            } else {
+                dumpStacked(cpu, tc, ss.top());
+            }
+            ss.pop();
+            i += 8;
+        }
+        // Restore altered special registers.
+        tc->setIntReg(INTREG_X29, fpLast);
+        tc->setIntReg(INTREG_X30, lrLast);
+        tc->setIntReg(INTREG_SP0, spBottom);
+        // Dump altered special registers.
+        dumpFP(cpu, tc, i + 8 + fpLast - spTop);
+        dumpLR(cpu, tc, lrLast);
+        cpu->simpoint_asm << "  b     simpoint_start" << std::endl;
+    }
+}
+
+void
+ISA::dumpCallReturn(BaseCPU *cpu)
+{
+    if (cpu->simpoint_asm.is_open())
+        cpu->simpoint_asm << "  ret" << std::endl;
 }
 
 }  // namespace ArmISA

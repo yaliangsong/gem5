@@ -54,6 +54,9 @@ class NonCachingSimpleCPU : public AtomicSimpleCPU
 
     void verifyMemoryMode() const override;
 
+    void dumpSimulatedSymbols();
+    void dumpSimulatedRegisters();
+
   protected:
     Tick sendPacket(MasterPort &port, const PacketPtr &pkt) override;
 };
