@@ -948,11 +948,62 @@ BaseCPU::markBranched(Addr address)
 }
 
 bool
+BaseCPU::find_mem_data(Addr addr, std::list<MemData> &data_array)
+{
+    for (auto &item : data_array) {
+        if (addr >= item.addr && addr < item.addr + item.size)
+            return true;
+    }
+    return false;
+}
+
+void
+BaseCPU::insert_mem_data(Addr addr, uint8_t value,
+                         std::list<MemData> &data_array)
+{
+    MemData data(addr, value);
+    bool merged = false;
+
+again:
+    for (auto it = data_array.begin(); it != data_array.end(); ++it) {
+        if ((*it).addr > data.addr) {
+            data_array.insert(it, data);
+            merged = true;
+            break;
+        }
+        if ((*it).merge(data)) {
+            data = *it;
+            data_array.erase(it);
+            goto again;
+        }
+    }
+    if (!merged)
+        data_array.push_back(data);
+}
+
+bool
 BaseCPU::markAccessed(OpClass opcls, Addr addr, Addr size, uint64_t value)
 {
-    std::string opstr = opcls == MemReadOp ? "R:0x" : "W:0x";
-    std::cout << opstr << std::hex << addr << "=0x";
-    std::cout << std::hex << value << std::endl;
+    int i;
+
+    if (size > 8) {
+        std::cout << "WARN: Invalid access size ";
+        std::cout << std::dec << size << "." << std::endl;
+        size = 8;
+    }
+    for (i = 0; i < size; i++) {
+        Addr byteAddr = addr + i;
+        uint8_t byteData = (uint8_t)(value >> (i * 8));
+
+        if (!find_mem_data(byteAddr, reads) &&
+            !find_mem_data(byteAddr, writes)) {
+            // First time access
+            if (opcls == MemReadOp)
+                insert_mem_data(byteAddr, byteData, reads);
+            else
+                insert_mem_data(byteAddr, byteData, writes);
+        }
+    }
     return true;
 }
 

@@ -71,6 +71,7 @@ Source('time.cc')
 Source('trace.cc')
 GTest('trie.test', 'trie.test.cc')
 Source('types.cc')
+Source('mem_data.cc')
 
 Source('loader/aout_object.cc')
 Source('loader/dtb_object.cc')
