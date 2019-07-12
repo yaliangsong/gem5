@@ -322,6 +322,19 @@ class RegImmImmOp : public PredOp
             Addr pc, const SymbolTable *symtab) const override;
 };
 
+class MovxRegImmImmOp : public RegImmImmOp
+{
+  protected:
+
+    MovxRegImmImmOp(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
+                IntRegIndex _dest, uint64_t _imm1, uint64_t _imm2) :
+        RegImmImmOp(mnem, _machInst, __opClass, _dest, _imm1, _imm2)
+    {}
+
+    std::string generateDisassembly(
+            Addr pc, const SymbolTable *symtab) const override;
+};
+
 class RegRegImmImmOp : public PredOp
 {
   protected:
